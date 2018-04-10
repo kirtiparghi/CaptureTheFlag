@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context="com.kirtiparghi.capturetheflag.ActivitySplash">
+
+    <WebView
+        android:id="@+id/view"
+        android:layout_centerInParent="true"
+        android:layout_width="150dp"
+        android:layout_height="150dp"
+        android:layout_marginEnd="88dp"
+        />
+
+    <TextView
+        android:gravity="center"
+        android:layout_centerInParent="true"
+        android:id="@+id/txtViewAppName"
+        android:layout_below="@+id/view"
+        android:layout_width="300dp"
+        android:layout_height="50dp"
+        android:text="CAPTURE THE FLAG"
+        android:textColor="@color/themecolor"
+        android:textSize="30sp"
+        />
+
+</RelativeLayout>

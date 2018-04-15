@@ -5,7 +5,28 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context="com.kirtiparghi.capturetheflag.ActivityLogin">
-
+    <RadioGroup
+        android:id="@+id/radioPlayers"
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="50dp">
+        <RadioButton
+            android:textSize="20dp"
+            android:layout_weight="1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PLAYER"
+            android:id="@+id/radioPlayer"
+            android:checked="true"
+            />
+        <RadioButton
+            android:textSize="20dp"
+            android:layout_weight="1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ADMIN"
+            />
+    </RadioGroup>
     <EditText
         android:layout_marginLeft="10dp"
         android:layout_marginRight="10dp"
@@ -31,10 +52,46 @@
         android:inputType="textPassword"
         />
 
+    <LinearLayout
+        android:id="@+id/linearlayout"
+        android:layout_below="@+id/password"
+        android:layout_width="match_parent"
+        android:layout_height="50dp">
+        <TextView
+            android:layout_marginLeft="10dp"
+            android:textSize="20dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Select Team : "
+            />
+        <RadioGroup
+            android:id="@+id/radioTeams"
+            android:orientation="horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="50dp">
+            <RadioButton
+                android:textSize="20dp"
+                android:layout_weight="1"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Team A"
+                android:id="@+id/radioTeam"
+                android:checked="true"
+                />
+            <RadioButton
+                android:textSize="20dp"
+                android:layout_weight="1"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Team B"
+                />
+        </RadioGroup>
+    </LinearLayout>
+
     <Button
         android:layout_marginLeft="10dp"
         android:layout_marginRight="10dp"
-        android:layout_below="@+id/password"
+        android:layout_below="@+id/linearlayout"
         android:layout_centerInParent="true"
         android:id="@+id/login_button"
         android:layout_width="match_parent"

@@ -1,7 +1,12 @@
 package com.kirtiparghi.capturetheflag;
 
+import android.*;
+import android.Manifest;
+import android.content.Context;
 import android.content.DialogInterface;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.location.Location;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
@@ -15,24 +20,37 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.location.places.GeoDataClient;
-import com.google.android.gms.location.places.PlaceDetectionClient;
-import com.google.android.gms.location.places.PlaceLikelihood;
-import com.google.android.gms.location.places.PlaceLikelihoodBufferResponse;
-import com.google.android.gms.location.places.Places;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.LocationSource;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.PolygonOptions;
+import com.google.android.gms.maps.model.PolylineOptions;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
+import com.google.firebase.database.ChildEventListener;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.maps.android.SphericalUtil;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+import java.util.Timer;
+import java.util.TimerTask;
 
 /**
  * An activity that displays a map showing the place at the device's current location.
@@ -40,57 +58,45 @@ import com.google.android.gms.tasks.Task;
 public class ActivityAdminHome extends AppCompatActivity
         implements OnMapReadyCallback {
 
-    private static final String TAG = ActivityPlayerHome.class.getSimpleName();
-    private GoogleMap mMap;
-    private CameraPosition mCameraPosition;
+    private static final String TAG = ActivityAdminHome.class.getSimpleName();
 
-    // The entry points to the Places API.
-    private GeoDataClient mGeoDataClient;
-    private PlaceDetectionClient mPlaceDetectionClient;
-
-    // The entry point to the Fused Location Provider.
-    private FusedLocationProviderClient mFusedLocationProviderClient;
-
-    // A default location (Sydney, Australia) and default zoom to use when location permission is
-    // not granted.
-    private final LatLng mDefaultLocation = new LatLng(-33.8523341, 151.2106085);
-    private static final int DEFAULT_ZOOM = 15;
+    //GOOGLE MAP IMPLEMENTAION VARIABLE
     private static final int PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION = 1;
-    private boolean mLocationPermissionGranted;
-
-    // The geographical location where the device is currently located. That is, the last-known
-    // location retrieved by the Fused Location Provider.
     private Location mLastKnownLocation;
-
-    // Keys for storing activity state.
     private static final String KEY_CAMERA_POSITION = "camera_position";
     private static final String KEY_LOCATION = "location";
+    private static final String FINE_LOCATION = android.Manifest.permission.ACCESS_FINE_LOCATION;
+    private static final String COURSE_LOCATION = android.Manifest.permission.ACCESS_COARSE_LOCATION;
+    private static final int LOCATION_PERMISSION_REQUEST_CODE = 1234;
+    private static final float DEFAULT_ZOOM = 100f;
+    private LatLng middle1, middle2, corner1, corner2, corner3, corner4;
+    private Boolean mLocationPermissionGranted = false;
+    private GoogleMap mMap;
+    private FusedLocationProviderClient mFusedLocationProviderClient;
 
-    // Used for selecting the current place.
-    private static final int M_MAX_ENTRIES = 5;
-    private String[] mLikelyPlaceNames;
-    private String[] mLikelyPlaceAddresses;
-    private String[] mLikelyPlaceAttributions;
-    private LatLng[] mLikelyPlaceLatLngs;
+    //FIREBASE VARIABLES
+    FirebaseDatabase database;
+    DatabaseReference root;
+    private ChildEventListener mChildEventListener ;
+
+    //PLAYERS LIST
+    private ArrayList<Player> listPlayers;
+    private ArrayList<Marker> mMarkerArray = new ArrayList<Marker>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        listPlayers = new ArrayList<Player>();
+        mMarkerArray = new ArrayList<Marker>();
+
         // Retrieve location and camera position from saved instance state.
         if (savedInstanceState != null) {
             mLastKnownLocation = savedInstanceState.getParcelable(KEY_LOCATION);
-            mCameraPosition = savedInstanceState.getParcelable(KEY_CAMERA_POSITION);
         }
 
         // Retrieve the content view that renders the map.
         setContentView(R.layout.layout_admin_home);
-
-        // Construct a GeoDataClient.
-        mGeoDataClient = Places.getGeoDataClient(this, null);
-
-        // Construct a PlaceDetectionClient.
-        mPlaceDetectionClient = Places.getPlaceDetectionClient(this, null);
 
         // Construct a FusedLocationProviderClient.
         mFusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this);
@@ -100,6 +106,64 @@ public class ActivityAdminHome extends AppCompatActivity
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
 
+        fetchPlayersDetails();
+    }
+
+    private void fetchPlayersDetails() {
+        database = FirebaseDatabase.getInstance();
+        root = database.getReference();
+        addNewPlayerAddedOrUpdatedListener();
+    }
+
+    void addNewPlayerAddedOrUpdatedListener() {
+        if (mChildEventListener == null) {
+
+            mChildEventListener = new ChildEventListener() {
+                @Override
+                public void onChildAdded(DataSnapshot dataSnapshot, String s) {
+                    Player player = dataSnapshot.getValue(Player.class);
+                    //update google map
+                    if (!player.getLatitude().equals("")) {
+                        listPlayers.add(player);
+                    }
+                    setPlayersOnMap();
+                    Toast.makeText(getApplicationContext(),"Added : " + player.player,Toast.LENGTH_SHORT).show();
+                }
+
+                @Override
+                public void onChildChanged(DataSnapshot dataSnapshot, String s) {
+                    Player player = dataSnapshot.getValue(Player.class);
+                    for (int index = 0; index < listPlayers.size(); index++) {
+                        Player p = listPlayers.get(index);
+                        if (p.player == player.player) {
+                            listPlayers.set(index,player);
+                        }
+                        else {
+                            listPlayers.add(player);
+                        }
+                    }
+                    Log.e("ctf","on child changed call");
+                    Log.e("ctf",listPlayers.size()+"");
+                    //update google map
+                    setPlayersOnMap();
+
+                    Toast.makeText(getApplicationContext(),"Changed : " + player.player,Toast.LENGTH_SHORT).show();
+                }
+
+                @Override
+                public void onChildRemoved(DataSnapshot dataSnapshot) {
+                }
+
+                @Override
+                public void onChildMoved(DataSnapshot dataSnapshot, String s) {
+                }
+
+                @Override
+                public void onCancelled(DatabaseError databaseError) {
+                }
+            };
+            root.child("Player").addChildEventListener(mChildEventListener);
+        }
     }
 
     /**
@@ -116,6 +180,7 @@ public class ActivityAdminHome extends AppCompatActivity
 
     /**
      * Sets up the options menu.
+     *
      * @param menu The options menu.
      * @return Boolean.
      */
@@ -127,13 +192,18 @@ public class ActivityAdminHome extends AppCompatActivity
 
     /**
      * Handles a click on the menu option to get a place.
+     *
      * @param item The menu item to handle.
      * @return Boolean.
      */
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == R.id.option_get_place) {
-//            showCurrentPlace();
+        if (item.getItemId() == R.id.logout) {
+            SharedPreferences sharedpreferences = getSharedPreferences("ctf", Context.MODE_PRIVATE);
+            SharedPreferences.Editor editor = sharedpreferences.edit();
+            editor.putString("email","");
+            editor.putString("isPlayer","");
+            editor.commit();
             finish();
         }
         return true;
@@ -146,32 +216,7 @@ public class ActivityAdminHome extends AppCompatActivity
     @Override
     public void onMapReady(GoogleMap map) {
         mMap = map;
-
-        // Use a custom info window adapter to handle multiple lines of text in the
-        // info window contents.
-//        mMap.setInfoWindowAdapter(new GoogleMap.InfoWindowAdapter() {
-//
-//            @Override
-//            // Return null here, so that getInfoContents() is called next.
-//            public View getInfoWindow(Marker arg0) {
-//                return null;
-//            }
-//
-//            @Override
-//            public View getInfoContents(Marker marker) {
-//                // Inflate the layouts for the info window, title and snippet.
-//                View infoWindow = getLayoutInflater().inflate(R.layout.custom_info_contents,
-//                        (FrameLayout) findViewById(R.id.map), false);
-//
-//                TextView title = ((TextView) infoWindow.findViewById(R.id.title));
-//                title.setText(marker.getTitle());
-//
-//                TextView snippet = ((TextView) infoWindow.findViewById(R.id.snippet));
-//                snippet.setText(marker.getSnippet());
-//
-//                return infoWindow;
-//            }
-//        });
+        map.getUiSettings().setZoomControlsEnabled(true);
 
         // Prompt the user for permission.
         getLocationPermission();
@@ -181,6 +226,111 @@ public class ActivityAdminHome extends AppCompatActivity
 
         // Get the current location of the device and set the position of the map.
         getDeviceLocation();
+
+        if (mLocationPermissionGranted)  {
+
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+            mMap.setMyLocationEnabled(true );
+        }
+    }
+
+    private void setPlayersOnMap() {
+
+        mMap.clear();
+
+        // The distance you want to increase your square (in meters)
+        double distance = 3;
+
+        List<LatLng> positions = new ArrayList<>();
+
+        //REMOVE ALL MARKERS
+        for (Marker m : mMarkerArray) {
+            Log.e("ctf","remove....");
+            m.remove();
+        }
+
+        for (int index =0 ; index < listPlayers.size(); index++) {
+            Player p = listPlayers.get(index);
+            positions.add(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude())));
+
+            if (p.team.equals("A")) {
+                //ADD MARKERS......
+                Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude()))).icon(BitmapDescriptorFactory.fromResource(R.drawable.red)));
+                mMarkerArray.add(marker);
+            }
+            else {
+                //ADD MARKERS......
+                Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude()))).icon(BitmapDescriptorFactory.fromResource(R.drawable.blue)));
+                mMarkerArray.add(marker);
+            }
+        }
+
+        // Create a LatLngBounds.Builder and include your positions
+        LatLngBounds.Builder builder = new LatLngBounds.Builder();
+        for (LatLng position : positions) {
+            builder.include(position);
+        }
+
+        // Calculate the bounds of the initial positions
+        LatLngBounds initialBounds = builder.build();
+
+        // Increase the bounds by the given distance
+        // Notice the distance * Math.sqrt(2) to increase the bounds in the directions of northeast and southwest (45 and 225 degrees respectively)
+        LatLng targetNorteast = SphericalUtil.computeOffset(initialBounds.northeast, distance * Math.sqrt(15), 0);
+        LatLng targetSouthwest = SphericalUtil.computeOffset(initialBounds.southwest, distance * Math.sqrt(15), 0);
+
+        CameraPosition googlePlex = CameraPosition.builder()
+                .target(new LatLng(targetNorteast.latitude, targetSouthwest.longitude))
+                .zoom(20)
+                .bearing(0)
+                .tilt(45)
+                .build();
+
+        mMap.moveCamera(CameraUpdateFactory.newCameraPosition(googlePlex));
+
+        // Add the new positions to the bounds
+        builder.include(targetNorteast);
+        builder.include(targetSouthwest);
+
+        // Calculate the bounds of the final positions
+        LatLngBounds finalBounds = builder.build();
+
+        double middleLatitude = (finalBounds.northeast.latitude - finalBounds.southwest.latitude) / 2 + finalBounds.southwest.latitude;
+
+        middle1 = new LatLng(middleLatitude, finalBounds.northeast.longitude);
+        middle2 = new LatLng(middleLatitude, finalBounds.southwest.longitude);
+        corner1 = new LatLng(finalBounds.northeast.latitude, finalBounds.southwest.longitude);
+        corner2 = new LatLng(finalBounds.northeast.latitude, finalBounds.northeast.longitude);
+        corner3 = new LatLng(finalBounds.southwest.latitude, finalBounds.northeast.longitude);
+        corner4 = new LatLng(finalBounds.southwest.latitude, finalBounds.southwest.longitude);
+
+        double variation = (corner1.longitude - corner2.longitude) * 0.3;
+
+        LatLng jailCorner12 = new LatLng(corner1.latitude, corner1.longitude - variation);
+        LatLng jailCorner13 = new LatLng(corner1.latitude - variation, corner1.longitude - variation);
+        LatLng jailCorner14 = new LatLng(corner1.latitude - variation, corner1.longitude);
+
+        LatLng jailCorner32 = new LatLng(corner3.latitude, corner3.longitude + variation);
+        LatLng jailCorner33 = new LatLng(corner3.latitude + variation, corner3.longitude + variation);
+        LatLng jailCorner34 = new LatLng(corner3.latitude + variation, corner3.longitude);
+
+
+        addJail(corner1, jailCorner12, jailCorner13, jailCorner14);
+        addJail(corner3, jailCorner32, jailCorner33, jailCorner34);
+
+        drawBounds (finalBounds, Color.RED);
+
+        mMap.addPolyline(
+                new PolylineOptions().add(
+                        middle1,
+                        middle2
+                ).width(10).color(Color.BLUE).geodesic(true)
+        );
+
+        // ge Flag Coordinate
+        addFlag();
     }
 
     /**
@@ -206,9 +356,9 @@ public class ActivityAdminHome extends AppCompatActivity
                         } else {
                             Log.d(TAG, "Current location is null. Using defaults.");
                             Log.e(TAG, "Exception: %s", task.getException());
-                            mMap.moveCamera(CameraUpdateFactory
-                                    .newLatLngZoom(mDefaultLocation, DEFAULT_ZOOM));
-                            mMap.getUiSettings().setMyLocationButtonEnabled(false);
+//                            mMap.moveCamera(CameraUpdateFactory
+//                                    .newLatLngZoom(mDefaultLocation, DEFAULT_ZOOM));
+//                            mMap.getUiSettings().setMyLocationButtonEnabled(false);
                         }
                     }
                 });
@@ -271,106 +421,9 @@ public class ActivityAdminHome extends AppCompatActivity
         if (mLocationPermissionGranted) {
             // Get the likely places - that is, the businesses and other points of interest that
             // are the best match for the device's current location.
-            @SuppressWarnings("MissingPermission") final
-            Task<PlaceLikelihoodBufferResponse> placeResult =
-                    mPlaceDetectionClient.getCurrentPlace(null);
-            placeResult.addOnCompleteListener
-                    (new OnCompleteListener<PlaceLikelihoodBufferResponse>() {
-                        @Override
-                        public void onComplete(@NonNull Task<PlaceLikelihoodBufferResponse> task) {
-                            if (task.isSuccessful() && task.getResult() != null) {
-                                PlaceLikelihoodBufferResponse likelyPlaces = task.getResult();
-
-                                // Set the count, handling cases where less than 5 entries are returned.
-//                                int count;
-//                                if (likelyPlaces.getCount() < M_MAX_ENTRIES) {
-//                                    count = likelyPlaces.getCount();
-//                                } else {
-//                                    count = M_MAX_ENTRIES;
-//                                }
-//
-//                                int i = 0;
-//                                mLikelyPlaceNames = new String[count];
-//                                mLikelyPlaceAddresses = new String[count];
-//                                mLikelyPlaceAttributions = new String[count];
-//                                mLikelyPlaceLatLngs = new LatLng[count];
-//
-//                                for (PlaceLikelihood placeLikelihood : likelyPlaces) {
-//                                    // Build a list of likely places to show the user.
-//                                    mLikelyPlaceNames[i] = (String) placeLikelihood.getPlace().getName();
-//                                    mLikelyPlaceAddresses[i] = (String) placeLikelihood.getPlace()
-//                                            .getAddress();
-//                                    mLikelyPlaceAttributions[i] = (String) placeLikelihood.getPlace()
-//                                            .getAttributions();
-//                                    mLikelyPlaceLatLngs[i] = placeLikelihood.getPlace().getLatLng();
-//
-//                                    i++;
-//                                    if (i > (count - 1)) {
-//                                        break;
-//                                    }
-//                                }
-//
-//                                // Release the place likelihood buffer, to avoid memory leaks.
-//                                likelyPlaces.release();
-
-                                // Show a dialog offering the user the list of likely places, and add a
-                                // marker at the selected place.
-                                openPlacesDialog();
-
-                            } else {
-                                Log.e(TAG, "Exception: %s", task.getException());
-                            }
-                        }
-                    });
-        } else {
-            // The user has not granted permission.
-            Log.i(TAG, "The user did not grant location permission.");
-
-            // Add a default marker, because the user hasn't selected a place.
-            mMap.addMarker(new MarkerOptions()
-                    .title(getString(R.string.default_info_title))
-                    .position(mDefaultLocation)
-                    .snippet(getString(R.string.default_info_snippet)));
-
-            // Prompt the user for permission.
-            getLocationPermission();
         }
     }
 
-    /**
-     * Displays a form allowing the user to select a place from a list of likely places.
-     */
-    private void openPlacesDialog() {
-        // Ask the user to choose the place where they are now.
-        DialogInterface.OnClickListener listener = new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                // The "which" argument contains the position of the selected item.
-                LatLng markerLatLng = mLikelyPlaceLatLngs[which];
-                String markerSnippet = mLikelyPlaceAddresses[which];
-                if (mLikelyPlaceAttributions[which] != null) {
-                    markerSnippet = markerSnippet + "\n" + mLikelyPlaceAttributions[which];
-                }
-
-                // Add a marker for the selected place, with an info window
-                // showing information about that place.
-                mMap.addMarker(new MarkerOptions()
-                        .title(mLikelyPlaceNames[which])
-                        .position(markerLatLng)
-                        .snippet(markerSnippet));
-
-                // Position the map's camera at the location of the marker.
-                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(markerLatLng,
-                        DEFAULT_ZOOM));
-            }
-        };
-
-        // Display the dialog.
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(R.string.pick_place)
-                .setItems(mLikelyPlaceNames, listener)
-                .show();
-    }
 
     /**
      * Updates the map's UI settings based on whether the user has granted location permission.
@@ -389,8 +442,157 @@ public class ActivityAdminHome extends AppCompatActivity
                 mLastKnownLocation = null;
                 getLocationPermission();
             }
-        } catch (SecurityException e)  {
+        } catch (SecurityException e) {
             Log.e("Exception: %s", e.getMessage());
         }
     }
+
+    private Location latlngToLocation(LatLng dest) {
+        Location loc = new Location("");
+        loc.setLatitude(dest.latitude);
+        loc.setLongitude(dest.longitude);
+        return loc;
+    }
+
+    private void drawBounds (LatLngBounds bounds, int color) {
+        PolygonOptions polygonOptions =  new PolygonOptions()
+                .add(new LatLng(bounds.northeast.latitude, bounds.northeast.longitude))
+                .add(new LatLng(bounds.southwest.latitude, bounds.northeast.longitude))
+                .add(new LatLng(bounds.southwest.latitude, bounds.southwest.longitude))
+                .add(new LatLng(bounds.northeast.latitude, bounds.southwest.longitude))
+                .strokeColor(color);
+
+
+        mMap.addPolygon(polygonOptions);
+
+        Toast.makeText(getApplicationContext(),"draw bounds...",Toast.LENGTH_SHORT).show();
+    }
+
+    public void moveCamera(LatLng latLng, Float zoom) {
+
+        Log.d(TAG, "moveCamera: Moving the Camera To lat : " + latLng.latitude + "|| Lng : " + latLng.longitude);
+
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, zoom));
+        mMap.addMarker(new MarkerOptions().position(latLng));
+    }
+
+    private void addPolylineCustom(LatLng latLng1, LatLng latLng2){
+
+        mMap.addPolyline(
+                new PolylineOptions().add(
+                        latLng1,
+                        latLng2
+                ).width(10).color(Color.YELLOW).geodesic(true)
+        );
+
+    }
+
+    private void addJail(LatLng latLng1, LatLng latLng2, LatLng latLng3, LatLng latLng4){
+
+        addPolylineCustom(latLng2, latLng3);
+        addPolylineCustom(latLng4, latLng3);
+        addPolylineCustom(latLng1, latLng4);
+
+    }
+
+    private void addFlag(){
+
+        mMap.addMarker(new MarkerOptions().position(getFlagCoordinate(corner1, middle1)).title("Flag").icon(BitmapDescriptorFactory.fromResource(R.drawable.flag_icon)));
+        mMap.addMarker(new MarkerOptions().position(getFlagCoordinate(corner3, middle2)).title("Flag").icon(BitmapDescriptorFactory.fromResource(R.drawable.flag_icon)));
+
+
+    }
+
+    private LatLng getFlagCoordinate(LatLng latLng1, LatLng latLng2){
+
+        double flagLat, flagLng;
+
+
+        flagLat = flagCoordinatesLatitude(latLng1.latitude, latLng2.latitude);
+        flagLng = flagCoordinatesLongitude(latLng1.longitude, latLng2.longitude);
+
+        return new LatLng(flagLat, flagLng);
+
+    }
+
+    private double flagCoordinatesLatitude(double latitude1, double latitude2){
+
+        double minLatitude, maxLatitude;
+
+
+
+        if(latitude1 < latitude2){
+
+
+            minLatitude = latitude1;
+            maxLatitude = latitude2;
+
+        }else if(latitude1 > latitude2){
+
+            minLatitude = latitude2;
+            maxLatitude = latitude1;
+
+
+        }else{
+
+            Log.e(TAG, "flagCoordinates: Invalid Corner Coordinate Please manual Check Error. . .");
+            return 0;
+
+        }
+
+
+        return  getRandomeCoordinate(minLatitude, maxLatitude);
+
+
+    }
+
+    private double flagCoordinatesLongitude(double longitude1, double longitude2){
+
+        double minLongitude, maxLongitude;
+
+
+
+        if(longitude1 < longitude2){
+
+
+            minLongitude = longitude1;
+            maxLongitude = longitude2;
+
+        }else if(longitude1 > longitude2){
+
+            minLongitude = longitude2;
+            maxLongitude = longitude1;
+
+
+        }else{
+
+            Log.e(TAG, "flagCoordinates: Invalid Corner Coordinate Please manual Check Error. . .");
+            return 0;
+
+        }
+
+
+        return  getRandomeCoordinate(minLongitude, maxLongitude);
+
+
+    }
+
+    private double getRandomeCoordinate(double min, double max){
+
+        Random r = new Random();
+
+        double flagLatitude = min + (max - min) * r.nextDouble();
+
+        if(flagLatitude < max && flagLatitude > min){
+
+            return flagLatitude;
+
+        }else{
+
+            return getRandomeCoordinate(min, max);
+
+        }
+
+    }
+
 }

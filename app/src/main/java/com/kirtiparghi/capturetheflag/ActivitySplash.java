@@ -2,7 +2,9 @@ package com.kirtiparghi.capturetheflag;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -20,6 +22,7 @@ public class ActivitySplash extends Activity {
 
     TextView txtViewAppName;
     WebView view;
+
     @SuppressLint("WrongViewCast")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,9 +50,24 @@ public class ActivitySplash extends Activity {
         Timer timer = new Timer();
         timer.schedule(new TimerTask() {
             public void run() {
-                Intent main = new Intent(ActivitySplash.this,
-                        ActivityLogin.class);
-                startActivity(main);
+
+                SharedPreferences sharedpreferences = getSharedPreferences("ctf", Context.MODE_PRIVATE);
+                if (sharedpreferences.getString("email","").equals("admin@gmail.com")) {
+                    Intent main = new Intent(ActivitySplash.this,
+                            ActivityAdminHome.class);
+                    startActivity(main);
+                }
+                else if (sharedpreferences.getString("isPlayer","").equals("true")) {
+
+                    Intent main = new Intent(ActivitySplash.this,
+                            ActivityPlayerHome.class);
+                    startActivity(main);
+                }
+                else {
+                        Intent main = new Intent(ActivitySplash.this,
+                                ActivityLogin.class);
+                        startActivity(main);
+                }
                 finish();
             }
         }, 3000);

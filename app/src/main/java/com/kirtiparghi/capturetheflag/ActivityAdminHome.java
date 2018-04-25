@@ -4,6 +4,7 @@ import android.*;
 import android.Manifest;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -83,9 +84,13 @@ public class ActivityAdminHome extends AppCompatActivity
     private ArrayList<Player> listPlayers;
     private ArrayList<Marker> mMarkerArray = new ArrayList<Marker>();
 
+    int isFlagAdded;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        isFlagAdded = 0;
 
         listPlayers = new ArrayList<Player>();
         mMarkerArray = new ArrayList<Marker>();
@@ -204,6 +209,14 @@ public class ActivityAdminHome extends AppCompatActivity
             editor.putString("email","");
             editor.putString("isPlayer","");
             editor.commit();
+
+            //sukh
+            ComplexPreferences complexPreferences = ComplexPreferences.getComplexPreferences(getApplicationContext(), "object_prefs", 0);
+            complexPreferences.clearObject();
+            complexPreferences.commit();
+            Intent intent = new Intent(getApplicationContext(), ActivityLogin.class);
+            startActivity(intent);
+
             finish();
         }
         return true;
@@ -251,19 +264,26 @@ public class ActivityAdminHome extends AppCompatActivity
             m.remove();
         }
 
-        for (int index =0 ; index < listPlayers.size(); index++) {
-            Player p = listPlayers.get(index);
-            positions.add(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude())));
+        if (listPlayers.size() >0) {
+            for (int index =0 ; index < listPlayers.size(); index++) {
+                Player p = listPlayers.get(index);
+                positions.add(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude())));
+                Toast.makeText(getApplicationContext(), p.getTeam()+"", Toast.LENGTH_SHORT).show();
 
-            if (p.team.equals("A")) {
-                //ADD MARKERS......
-                Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude()))).icon(BitmapDescriptorFactory.fromResource(R.drawable.red)));
-                mMarkerArray.add(marker);
-            }
-            else {
-                //ADD MARKERS......
-                Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude()))).icon(BitmapDescriptorFactory.fromResource(R.drawable.blue)));
-                mMarkerArray.add(marker);
+//            String s = p.getTeam().toString();
+//            Log.e("ctf","temmmmmmm " + s);
+
+                if (p.getTeam().toString() != null) {
+                    if (p.getTeam().toString().equals("A")) {
+                        //ADD MARKERS......
+                        Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(Double.parseDouble(p.getLatitude()), Double.parseDouble(p.getLongitude()))).icon(BitmapDescriptorFactory.fromResource(R.drawable.red)));
+                        mMarkerArray.add(marker);
+                    } else {
+                        //ADD MARKERS......
+                        Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(Double.parseDouble(p.getLatitude()), Double.parseDouble(p.getLongitude()))).icon(BitmapDescriptorFactory.fromResource(R.drawable.blue)));
+                        mMarkerArray.add(marker);
+                    }
+                }
             }
         }
 
@@ -283,7 +303,7 @@ public class ActivityAdminHome extends AppCompatActivity
 
         CameraPosition googlePlex = CameraPosition.builder()
                 .target(new LatLng(targetNorteast.latitude, targetSouthwest.longitude))
-                .zoom(20)
+                .zoom(18)
                 .bearing(0)
                 .tilt(45)
                 .build();
@@ -330,7 +350,11 @@ public class ActivityAdminHome extends AppCompatActivity
         );
 
         // ge Flag Coordinate
-        addFlag();
+        //if (isFlagAdded == 0) {
+            addFlag();
+//            isFlagAdded = 1;
+//        }
+
     }
 
     /**
@@ -496,11 +520,8 @@ public class ActivityAdminHome extends AppCompatActivity
     }
 
     private void addFlag(){
-
         mMap.addMarker(new MarkerOptions().position(getFlagCoordinate(corner1, middle1)).title("Flag").icon(BitmapDescriptorFactory.fromResource(R.drawable.flag_icon)));
         mMap.addMarker(new MarkerOptions().position(getFlagCoordinate(corner3, middle2)).title("Flag").icon(BitmapDescriptorFactory.fromResource(R.drawable.flag_icon)));
-
-
     }
 
     private LatLng getFlagCoordinate(LatLng latLng1, LatLng latLng2){
@@ -579,9 +600,8 @@ public class ActivityAdminHome extends AppCompatActivity
 
     private double getRandomeCoordinate(double min, double max){
 
-        Random r = new Random();
 
-        double flagLatitude = min + (max - min) * r.nextDouble();
+        double flagLatitude = min + (max - min) * 0.3;
 
         if(flagLatitude < max && flagLatitude > min){
 

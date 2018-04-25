@@ -34,7 +34,7 @@ dependencies {
     implementation 'com.google.firebase:firebase-database:11.2.0'
 
     compile 'com.google.maps.android:android-maps-utils:0.4+'
-
+    compile 'com.google.code.gson:gson:2.8.2'
 }
 
 

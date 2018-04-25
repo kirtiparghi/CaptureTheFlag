@@ -13,19 +13,29 @@ public class Player implements Serializable {
     public String team;
     public String longitude;
     public String latitude;
+    public String haveFlag;
 
     // constructors
     public Player() {
         // leave this constructor empty
     }
 
-    public Player(String playerId,String player, String passcode, String team,String longitude,String latitude) {
+    public Player(String playerId,String player, String passcode, String team,String longitude,String latitude, String haveFlag) {
         this.playerId=playerId;
         this.player = player;
         this.passcode = passcode;
         this.team = team;
         this.longitude=longitude;
         this.latitude=latitude;
+        this.haveFlag = haveFlag;
+    }
+
+    public String getHaveFlag() {
+        return haveFlag;
+    }
+
+    public void setHaveFlag(String haveFlag) {
+        this.haveFlag = haveFlag;
     }
 
     public String getPlayerId() {

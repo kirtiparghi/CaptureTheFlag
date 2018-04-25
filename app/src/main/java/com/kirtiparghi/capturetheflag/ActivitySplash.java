@@ -61,6 +61,7 @@ public class ActivitySplash extends Activity {
 
                     Intent main = new Intent(ActivitySplash.this,
                             ActivityPlayerHome.class);
+
                     startActivity(main);
                 }
                 else {

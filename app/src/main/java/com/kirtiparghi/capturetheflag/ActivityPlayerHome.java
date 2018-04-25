@@ -9,6 +9,8 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -20,6 +22,7 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -50,309 +53,246 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.LatLngBounds;
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.PolygonOptions;
 import com.google.android.gms.maps.model.PolylineOptions;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
+import com.google.firebase.database.ChildEventListener;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
+import com.google.maps.android.SphericalUtil;
 
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 
 /**
  * An activity that displays a map showing the place at the device's current location.
  */
 public class ActivityPlayerHome extends AppCompatActivity
         implements OnMapReadyCallback, com.google.android.gms.location.LocationListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
-    /**
-     * An activity that displays a map showing the place at the device's current location.
-     */
+
+    int isYardDraw = 0;
+
     private static final String TAG = com.kirtiparghi.capturetheflag.ActivityPlayerHome.class.getSimpleName();
     private GoogleMap mMap;
-    private CameraPosition mCameraPosition;
-
-    // The entry points to the Places API.
-    private GeoDataClient mGeoDataClient;
-    private PlaceDetectionClient mPlaceDetectionClient;
-
-    // The entry point to the Fused Location Provider.
-    private FusedLocationProviderClient mFusedLocationProviderClient;
-
-    // A default location (Sydney, Australia) and default zoom to use when location permission is
-    // not granted.
-    // Team B lat long
-    private final LatLng mDefaultLocation = new LatLng(-33.8523341, 151.2106085);
-    private static final int DEFAULT_ZOOM = 22;
-    private static final int PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION = 1;
-    private boolean mLocationPermissionGranted;
-
-    // The geographical location where the device is currently located. That is, the last-known
-    // location retrieved by the Fused Location Provider.
-    private Location mLastKnownLocation;
-
-    // Keys for storing activity state.
-    private static final String KEY_CAMERA_POSITION = "camera_position";
-    private static final String KEY_LOCATION = "location";
-
-    // Used for selecting the current place.
-    private static final int M_MAX_ENTRIES = 5;
-    private String[] mLikelyPlaceNames;
-    private String[] mLikelyPlaceAddresses;
-    private String[] mLikelyPlaceAttributions;
-    private LatLng[] mLikelyPlaceLatLngs;
     Double lat = 0.0, lon = 0.0;
+
+    //FIREBASE VARIABLES
+    FirebaseDatabase database;
+    DatabaseReference root;
+    private ChildEventListener mChildEventListener ;
+
+    //PLAYERS LIST
+    private ArrayList<Player> listPlayers;
+    private ArrayList<Marker> mMarkerArray = new ArrayList<Marker>();
+
+    private LatLng middle1, middle2, corner1, corner2, corner3, corner4;
+
+    private LatLng playerLatLng;
+
+    int isFlagAdded;
+
+    Player player;
+
+    Marker flagAMarker, flagBMarker;
+    LatLng flagALatLng, flagBLatLng;
+    LocationRequest mLocationRequest;
     private static final long INTERVAL = 5000;
     private static final long FASTEST_INTERVAL = 5000;
-    LocationRequest mLocationRequest;
+
     GoogleApiClient mGoogleApiClient;
-    //fencing
-    private GeofencingClient geofencingClient;
 
-    //flag lat long
-    private final LatLng mflag = new LatLng(13.062781691551208, 80.22946357727051);
-    //meters
-    private static final int GEOFENCE_RADIUS = 5;
-    CircleOptions circleOptions = new CircleOptions();
+    private boolean mLocationPermissionGranted;
 
-    //intent access variable
-    Player player;
-    //FB
-    private DatabaseReference mFirebaseDatabase;
-    private FirebaseDatabase mFirebaseInstance;
-    String playerEmail = "";
-    String userId = "";
-    private final LatLng boundry1 = new LatLng(43.7742720, -79.3383700);
-    private final LatLng boundry2 = new LatLng(43.7742860, -79.3309430);
-    private final LatLng boundry3 = new LatLng(43.7726600, -79.3280940);
-    private final LatLng boundry4 = new LatLng(43.7553610, -79.3268400);
-    ArrayList<LatLng> points;
-    PolylineOptions polylineOptions = null;
-    TextView txt_status=null;
-
-    protected void createLocationRequest() {
-        mLocationRequest = LocationRequest.create();
-        mLocationRequest.setInterval(INTERVAL);
-        mLocationRequest.setFastestInterval(FASTEST_INTERVAL);
-        mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-    }
+    private static final int PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION = 1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Retrieve location and camera position from saved instance state.
-        if (savedInstanceState != null) {
-            mLastKnownLocation = savedInstanceState.getParcelable(KEY_LOCATION);
-            mCameraPosition = savedInstanceState.getParcelable(KEY_CAMERA_POSITION);
-        }
-        createLocationRequest();
+
         mGoogleApiClient = new GoogleApiClient.Builder(this)
                 .addApi(LocationServices.API)
                 .addConnectionCallbacks(this)
                 .addOnConnectionFailedListener(this)
                 .build();
-        // Retrieve the content view that renders the map.
+        mGoogleApiClient.connect();
+
         setContentView(R.layout.layout_player_home);
-        getUserEmail();
-        intialize();
-        //getKey();
-        // Construct a GeoDataClient.
-        mGeoDataClient = Places.getGeoDataClient(this, null);
-        // Construct a PlaceDetectionClient.
-        mPlaceDetectionClient = Places.getPlaceDetectionClient(this, null);
-        // Construct a FusedLocationProviderClient.
-        mFusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this);
-        // Build the map.
+
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
+
         mapFragment.getMapAsync(this);
-        geofencingClient = LocationServices.getGeofencingClient(this);
+
+        isFlagAdded = 0;
+
+        listPlayers = new ArrayList<Player>();
+        mMarkerArray = new ArrayList<Marker>();
+
+        fetchPlayersDetails();
+
+        getCurrentPlayerFromPref();
+
+        listPlayers.add(player);
+
+       // Log.e("ctf","team is : "  + player.team);
     }
 
-    private void intialize() {
-        points = new ArrayList<LatLng>();
-        mFirebaseInstance = FirebaseDatabase.getInstance();
-        mFirebaseDatabase = mFirebaseInstance.getReference("Player");
-        polylineOptions = new PolylineOptions();
-        polylineOptions.color(Color.RED);
-        polylineOptions.width(10);
-        points.add(boundry1);
-        points.add(boundry2);
-        points.add(boundry3);
-        points.add(boundry4);
-        points.add(boundry1);
-        polylineOptions.addAll(points);
+    private void getCurrentPlayerFromPref() {
+        ComplexPreferences complexPreferences = ComplexPreferences.getComplexPreferences(getApplicationContext(), "object_prefs", 0);
+        player = complexPreferences.getObject("currentplayer", Player.class);
     }
 
-    private void getUserEmail() {
-        Bundle bundle = getIntent().getExtras();
-        player = (Player) bundle.getSerializable("player");
+    private void fetchPlayersDetails() {
+        database = FirebaseDatabase.getInstance();
+        root = database.getReference();
+        addNewPlayerAddedOrUpdatedListener();
     }
 
-    /**
-     * Saves the state of the map when the activity is paused.
-     */
-    @Override
-    protected void onSaveInstanceState(Bundle outState) {
-        if (mMap != null) {
-            outState.putParcelable(KEY_CAMERA_POSITION, mMap.getCameraPosition());
-            outState.putParcelable(KEY_LOCATION, mLastKnownLocation);
-            super.onSaveInstanceState(outState);
+    private void setPlayersOnMap() {
+
+        mMap.clear();
+
+        // The distance you want to increase your square (in meters)
+        double distance = 3;
+
+        List<LatLng> positions = new ArrayList<>();
+
+        //REMOVE ALL MARKERS
+        for (Marker m : mMarkerArray) {
+           // Log.e("ctf","remove....");
+            m.remove();
         }
-    }
 
-    /**
-     * Sets up the options menu.
-     *
-     * @param menu The options menu.
-     * @return Boolean.
-     */
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        getMenuInflater().inflate(R.menu.current_place_menu, menu);
-        return true;
-    }
+        for (int index =0 ; index < listPlayers.size(); index++) {
+            Player p = listPlayers.get(index);
+            positions.add(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude())));
 
-    /**
-     * Handles a click on the menu option to get a place.
-     *
-     * @param item The menu item to handle.
-     * @return Boolean.
-     */
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == R.id.logout) {
-            SharedPreferences sharedpreferences = getSharedPreferences("ctf", Context.MODE_PRIVATE);
-            SharedPreferences.Editor editor = sharedpreferences.edit();
-            editor.putString("email","");
-            editor.putString("isPlayer","");
-            editor.commit();
-            finish();
-        }
-        return true;
-    }
-
-    /**
-     * Manipulates the map when it's available.
-     * This callback is triggered when the map is ready to be used.
-     */
-    @Override
-    public void onMapReady(GoogleMap map) {
-        mMap = map;
-
-        mMap.setBuildingsEnabled(true);
-        // Use a custom info window adapter to handle multiple lines of text in the
-        // info window contents.
-//        mMap.setInfoWindowAdapter(new GoogleMap.InfoWindowAdapter() {
-//
-//            @Override
-//            // Return null here, so that getInfoContents() is called next.
-//            public View getInfoWindow(Marker arg0) {
-//                return null;
-//            }
-//
-//            @Override
-//            public View getInfoContents(Marker marker) {
-//                // Inflate the layouts for the info window, title and snippet.
-//                View infoWindow = getLayoutInflater().inflate(R.layout.custom_info_contents,
-//                        (FrameLayout) findViewById(R.id.map), false);
-//
-//                TextView title = ((TextView) infoWindow.findViewById(R.id.title));
-//                title.setText(marker.getTitle());
-//
-//                TextView snippet = ((TextView) infoWindow.findViewById(R.id.snippet));
-//                snippet.setText(marker.getSnippet());
-//
-//                return infoWindow;
-//            }
-//        });
-
-        // Prompt the user for permission.
-        getLocationPermission();
-
-        // Turn on the My Location layer and the related control on the map.
-        updateLocationUI();
-
-        // Get the current location of the device and set the position of the map.
-        getDeviceLocation();
-    }
-
-    /**
-     * Gets the current location of the device, and positions the map's camera.
-     */
-    private void getDeviceLocation() {
-            /*
-             * Get the best and most recent location of the device, which may be null in rare
-             * cases when a location is not available.
-             */
-        try {
-            if (mLocationPermissionGranted) {
-                Task<Location> locationResult = mFusedLocationProviderClient.getLastLocation();
-                locationResult.addOnCompleteListener(this, new OnCompleteListener<Location>() {
-                    @Override
-                    public void onComplete(@NonNull Task<Location> task) {
-                        if (task.isSuccessful()) {
-                            // Set the map's camera position to the current location of the device.
-                            mLastKnownLocation = task.getResult();
-                            if (mLastKnownLocation != null) {
-                                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(
-                                        new LatLng(mLastKnownLocation.getLatitude(),
-                                                mLastKnownLocation.getLongitude()), DEFAULT_ZOOM));
-                                lat = mLastKnownLocation.getLatitude();
-                                lon = mLastKnownLocation.getLongitude();
-                                LatLng latLng = new LatLng(lat, lon);
-
-                                String latitiude=String.valueOf(lat);
-                                String longitude = String.valueOf(lon);
-                                //Use intent
-                                // get the user from the activity
-                                player = (Player) getIntent().getSerializableExtra("player");
-
-                                String id = player.playerId;
-                                Log.i("id is ",id);
-
-                                //update firebase
-                                // setup the firebase variables
-                                mFirebaseInstance = FirebaseDatabase.getInstance();
-                                mFirebaseDatabase = mFirebaseInstance.getReference();
-
-                                //OverRide Player
-                                Player newplayer = new Player(id,player.player,player.passcode,player.team,latitiude,longitude);
-                                mFirebaseDatabase.child("Player").child(id).setValue(newplayer);
-                                Toast.makeText(getApplicationContext(),"Player Location Updated",Toast.LENGTH_LONG).show();
-
-                                mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 18), 5000, null);
-                                updateMap();
-                            } else {
-                                Log.d(TAG, "Current location is null. Using defaults.");
-                                Log.e(TAG, "Exception: %s", task.getException());
-                                mMap.moveCamera(CameraUpdateFactory
-                                        .newLatLngZoom(mDefaultLocation, DEFAULT_ZOOM));
-                                mMap.getUiSettings().setMyLocationButtonEnabled(false);
-                                LatLng latLng = new LatLng(lat, lon);
-                                mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 18), 5000, null);
-                            }
-
-                        } else {
-                            Log.d(TAG, "Current location is null. Using defaults.");
-                            Log.e(TAG, "Exception: %s", task.getException());
-                            mMap.moveCamera(CameraUpdateFactory
-                                    .newLatLngZoom(mDefaultLocation, DEFAULT_ZOOM));
-                            mMap.getUiSettings().setMyLocationButtonEnabled(false);
-                            LatLng latLng = new LatLng(lat, lon);
-                            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 18), 5000, null);
-                        }
-                    }
-                });
+            if (p.getTeam().equals("A")) {
+                Log.e("ctf","have flag --> " +p.getHaveFlag().toString());
+//                if (p.getHaveFlag().equals("true")) {
+//                    //ADD MARKERS......
+//                    Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude()))).icon(BitmapDescriptorFactory.fromResource(R.drawable.withflag)));
+//                    mMarkerArray.add(marker);
+//                    Log.e("ctf","Add Marker...."+p.player);
+//                }
+//                else {
+//                    //ADD MARKERS......
+//                    Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude()))).icon(BitmapDescriptorFactory.fromResource(R.drawable.red)));
+//                    mMarkerArray.add(marker);
+//                    Log.e("ctf","Add Marker...."+p.player);
+//                }
+                Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude()))).icon(BitmapDescriptorFactory.fromResource(R.drawable.red)));
+                mMarkerArray.add(marker);
+                Log.e("ctf","Add Marker...."+p.player);
             }
-        } catch (SecurityException e) {
-            Log.e("Exception: %s", e.getMessage());
+            else if (p.team.equals("B")) {
+//                if (p.getHaveFlag().equals("true")) {
+//                    //ADD MARKERS......
+//                    Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude()))).icon(BitmapDescriptorFactory.fromResource(R.drawable.withflag)));
+//                    mMarkerArray.add(marker);
+//                    Log.e("ctf","Add Marker...."+p.player);
+//                }
+//                else {
+//                    //ADD MARKERS......
+//                    Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude()))).icon(BitmapDescriptorFactory.fromResource(R.drawable.blue)));
+//                    mMarkerArray.add(marker);
+//                    Log.e("ctf","Add Marker else...."+p.player);
+//                }
+                Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(Double.parseDouble(p.getLatitude()),Double.parseDouble(p.getLongitude()))).icon(BitmapDescriptorFactory.fromResource(R.drawable.blue)));
+                mMarkerArray.add(marker);
+                Log.e("ctf","Add Marker else...."+p.player);
+
+            }
         }
+
+//        if (isYardDraw == 0) {
+//            Toast.makeText(getApplicationContext(),"Player size    " + listPlayers.size(), Toast.LENGTH_SHORT).show();
+//            if (listPlayers.size() >= 2) {
+                // Create a LatLngBounds.Builder and include your positions
+                LatLngBounds.Builder builder = new LatLngBounds.Builder();
+                for (LatLng position : positions) {
+                    builder.include(position);
+                }
+
+                // Calculate the bounds of the initial positions
+                LatLngBounds initialBounds = builder.build();
+
+                // Increase the bounds by the given distance
+                // Notice the distance * Math.sqrt(2) to increase the bounds in the directions of northeast and southwest (45 and 225 degrees respectively)
+                LatLng targetNorteast = SphericalUtil.computeOffset(initialBounds.northeast, distance * Math.sqrt(15), 0);
+                LatLng targetSouthwest = SphericalUtil.computeOffset(initialBounds.southwest, distance * Math.sqrt(15), 0);
+
+                // if (isYardDraw == 0) {
+                //if (listPlayers.size() >= 3) {
+                CameraPosition googlePlex = CameraPosition.builder()
+                        .target(new LatLng(targetNorteast.latitude, targetSouthwest.longitude))
+                        .zoom(18)
+                        .bearing(0)
+                        .tilt(45)
+                        .build();
+
+                mMap.moveCamera(CameraUpdateFactory.newCameraPosition(googlePlex));
+
+                // Add the new positions to the bounds
+                builder.include(targetNorteast);
+                builder.include(targetSouthwest);
+
+                // Calculate the bounds of the final positions
+                LatLngBounds finalBounds = builder.build();
+
+                double middleLatitude = (finalBounds.northeast.latitude - finalBounds.southwest.latitude) / 2 + finalBounds.southwest.latitude;
+
+                middle1 = new LatLng(middleLatitude, finalBounds.northeast.longitude);
+                middle2 = new LatLng(middleLatitude, finalBounds.southwest.longitude);
+                corner1 = new LatLng(finalBounds.northeast.latitude, finalBounds.southwest.longitude);
+                corner2 = new LatLng(finalBounds.northeast.latitude, finalBounds.northeast.longitude);
+                corner3 = new LatLng(finalBounds.southwest.latitude, finalBounds.northeast.longitude);
+                corner4 = new LatLng(finalBounds.southwest.latitude, finalBounds.southwest.longitude);
+
+                double variation = (corner1.longitude - corner2.longitude) * 0.3;
+
+                LatLng jailCorner12 = new LatLng(corner1.latitude, corner1.longitude - variation);
+                LatLng jailCorner13 = new LatLng(corner1.latitude - variation, corner1.longitude - variation);
+                LatLng jailCorner14 = new LatLng(corner1.latitude - variation, corner1.longitude);
+
+                LatLng jailCorner32 = new LatLng(corner3.latitude, corner3.longitude + variation);
+                LatLng jailCorner33 = new LatLng(corner3.latitude + variation, corner3.longitude + variation);
+                LatLng jailCorner34 = new LatLng(corner3.latitude + variation, corner3.longitude);
+
+                addJail(corner1, jailCorner12, jailCorner13, jailCorner14);
+                addJail(corner3, jailCorner32, jailCorner33, jailCorner34);
+
+                drawBounds(finalBounds, Color.RED);
+
+                mMap.addPolyline(
+                        new PolylineOptions().add(
+                                middle1,
+                                middle2
+                        ).width(10).color(Color.BLUE).geodesic(true)
+                );
+
+                // ge Flag Coordinate
+                //if (isFlagAdded == 0) {
+                addFlag();
+//            isFlagAdded = 1;
+//        }
+                //  }
+//                isYardDraw = 1;
+//                //}
+//            }
+     //   }
     }
+
 
     /**
      * Prompts the user for permission to use the device location.
@@ -374,6 +314,252 @@ public class ActivityPlayerHome extends AppCompatActivity
         }
     }
 
+    private void drawBounds (LatLngBounds bounds, int color) {
+        PolygonOptions polygonOptions =  new PolygonOptions()
+                .add(new LatLng(bounds.northeast.latitude, bounds.northeast.longitude))
+                .add(new LatLng(bounds.southwest.latitude, bounds.northeast.longitude))
+                .add(new LatLng(bounds.southwest.latitude, bounds.southwest.longitude))
+                .add(new LatLng(bounds.northeast.latitude, bounds.southwest.longitude))
+                .strokeColor(color);
+
+
+        mMap.addPolygon(polygonOptions);
+        //Toast.makeText(getApplicationContext(),"draw bounds...",Toast.LENGTH_SHORT).show();
+    }
+
+    void addNewPlayerAddedOrUpdatedListener() {
+        if (mChildEventListener == null) {
+
+            mChildEventListener = new ChildEventListener() {
+                @Override
+                public void onChildAdded(DataSnapshot dataSnapshot, String s) {
+                    ArrayList<Player> tmpArr = new ArrayList<Player>();
+                    tmpArr.add(player);
+                    Player playerObj = dataSnapshot.getValue(Player.class);
+
+                    if (!playerObj.team.equals(player.getTeam().toString())) {
+                        tmpArr.add(playerObj);
+                    }
+
+                    for (int index = 0; index < listPlayers.size(); index++) {
+                        Player p = listPlayers.get(index);
+                        if (p.player != playerObj.player && (!p.team.equals(player.getTeam().toString()))) {
+                            tmpArr.add(p);
+                        }
+                    }
+                    listPlayers = null;
+                    listPlayers = tmpArr;
+
+                    Log.e("ctf","on child changed call");
+                    Log.e("ctf",listPlayers.size()+"");
+                    //update google map
+                    if (listPlayers.size() > 0) {
+                        setPlayersOnMap();
+                    }
+                    //Toast.makeText(getApplicationContext(),"Added : " + playerObj.player,Toast.LENGTH_SHORT).show();
+                }
+
+                @Override
+                public void onChildChanged(DataSnapshot dataSnapshot, String s) {
+
+                    int isCurrentPlayer;
+                    ArrayList<Player> tmpArr = new ArrayList<Player>();
+
+                    Player playerObj = dataSnapshot.getValue(Player.class);
+                    if (playerObj.player.equals(player.getPlayer().toString())) {
+                        tmpArr.add(playerObj);
+                    }
+
+                    for (int index = 0; index < listPlayers.size(); index++) {
+                        Player p = listPlayers.get(index);
+                        if (p.player != playerObj.player && (!p.team.equals(player.getTeam().toString()))) {
+                            tmpArr.add(p);
+                        }
+                    }
+                    listPlayers = null;
+                    listPlayers = tmpArr;
+
+                    Log.e("ctf","on child changed call");
+                    Log.e("ctf",listPlayers.size()+"");
+                    //update google map
+                    if (listPlayers.size() > 0) {
+                        setPlayersOnMap();
+                    }
+
+                   // Toast.makeText(getApplicationContext(),"Changed : " + playerObj.player,Toast.LENGTH_SHORT).show();
+                }
+
+                @Override
+                public void onChildRemoved(DataSnapshot dataSnapshot) {
+                }
+
+                @Override
+                public void onChildMoved(DataSnapshot dataSnapshot, String s) {
+                }
+
+                @Override
+                public void onCancelled(DatabaseError databaseError) {
+                }
+            };
+            root.child("Player").addChildEventListener(mChildEventListener);
+        }
+    }
+
+    private void addPolylineCustom(LatLng latLng1, LatLng latLng2){
+
+        mMap.addPolyline(
+                new PolylineOptions().add(
+                        latLng1,
+                        latLng2
+                ).width(10).color(Color.YELLOW).geodesic(true)
+        );
+
+    }
+
+    private void addJail(LatLng latLng1, LatLng latLng2, LatLng latLng3, LatLng latLng4){
+        addPolylineCustom(latLng2, latLng3);
+        addPolylineCustom(latLng4, latLng3);
+        addPolylineCustom(latLng1, latLng4);
+    }
+
+    private void addFlag(){
+        flagAMarker = mMap.addMarker(new MarkerOptions().position(getFlagCoordinate(corner1, middle1)).title("Flag").icon(BitmapDescriptorFactory.fromResource(R.drawable.flag_icon)));
+        flagBMarker = mMap.addMarker(new MarkerOptions().position(getFlagCoordinate(corner3, middle2)).title("Flag").icon(BitmapDescriptorFactory.fromResource(R.drawable.flag_icon)));
+
+        flagALatLng = getFlagCoordinate(corner1, middle1);
+        flagBLatLng = getFlagCoordinate(corner3, middle2);
+
+        if (player.team.equals("A")) { //CURRENT PLAYER IS OF TEAM A
+            flagAMarker.setVisible(true);
+            flagBMarker.setVisible(false);
+        }
+        else { // CURRENT PLAYER IS OF TEAM B
+            flagAMarker.setVisible(false);
+            flagBMarker.setVisible(true);
+        }
+    }
+
+    private LatLng getFlagCoordinate(LatLng latLng1, LatLng latLng2){
+
+        double flagLat, flagLng;
+
+        flagLat = flagCoordinatesLatitude(latLng1.latitude, latLng2.latitude);
+        flagLng = flagCoordinatesLongitude(latLng1.longitude, latLng2.longitude);
+
+        return new LatLng(flagLat, flagLng);
+
+    }
+
+    private double flagCoordinatesLatitude(double latitude1, double latitude2){
+
+        double minLatitude, maxLatitude;
+
+
+
+        if(latitude1 < latitude2){
+
+
+            minLatitude = latitude1;
+            maxLatitude = latitude2;
+
+        }else if(latitude1 > latitude2){
+
+            minLatitude = latitude2;
+            maxLatitude = latitude1;
+
+
+        }else{
+
+            Log.e(TAG, "flagCoordinates: Invalid Corner Coordinate Please manual Check Error. . .");
+            return 0;
+
+        }
+
+
+        return  getRandomeCoordinate(minLatitude, maxLatitude);
+
+
+    }
+
+    private double flagCoordinatesLongitude(double longitude1, double longitude2){
+
+        double minLongitude, maxLongitude;
+
+
+
+        if(longitude1 < longitude2){
+
+
+            minLongitude = longitude1;
+            maxLongitude = longitude2;
+
+        }else if(longitude1 > longitude2){
+
+            minLongitude = longitude2;
+            maxLongitude = longitude1;
+
+
+        }else{
+
+            Log.e(TAG, "flagCoordinates: Invalid Corner Coordinate Please manual Check Error. . .");
+            return 0;
+
+        }
+
+
+        return  getRandomeCoordinate(minLongitude, maxLongitude);
+
+
+    }
+
+    private double getRandomeCoordinate(double min, double max){
+
+        Random r = new Random();
+
+        double flagLatitude = min + (max - min) * r.nextDouble();
+
+        if(flagLatitude < max && flagLatitude > min){
+
+            return flagLatitude;
+
+        }else{
+
+            return getRandomeCoordinate(min, max);
+
+        }
+
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.current_place_menu, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == R.id.logout) {
+            SharedPreferences sharedpreferences = getSharedPreferences("ctf", Context.MODE_PRIVATE);
+            SharedPreferences.Editor editor = sharedpreferences.edit();
+            editor.putString("email","");
+            editor.putString("isPlayer","");
+            editor.commit();
+            finish();
+        }
+        return true;
+    }
+
+    /**
+     * Manipulates the map when it's available.
+     * This callback is triggered when the map is ready to be used.
+     */
+    @Override
+    public void onMapReady(GoogleMap map) {
+        mMap = map;
+        mMap.setBuildingsEnabled(true);
+        getLocationPermission();
+    }
+
     /**
      * Handles the result of the request for location permissions.
      */
@@ -381,17 +567,6 @@ public class ActivityPlayerHome extends AppCompatActivity
     public void onRequestPermissionsResult(int requestCode,
                                            @NonNull String permissions[],
                                            @NonNull int[] grantResults) {
-        mLocationPermissionGranted = false;
-        switch (requestCode) {
-            case PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION: {
-                // If request is cancelled, the result arrays are empty.
-                if (grantResults.length > 0
-                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    mLocationPermissionGranted = true;
-                }
-            }
-        }
-        updateLocationUI();
     }
 
     /**
@@ -402,108 +577,6 @@ public class ActivityPlayerHome extends AppCompatActivity
         if (mMap == null) {
             return;
         }
-
-        if (mLocationPermissionGranted) {
-            // Get the likely places - that is, the businesses and other points of interest that
-            // are the best match for the device's current location.
-            @SuppressWarnings("MissingPermission") final Task<PlaceLikelihoodBufferResponse> placeResult =
-                    mPlaceDetectionClient.getCurrentPlace(null);
-            placeResult.addOnCompleteListener
-                    (new OnCompleteListener<PlaceLikelihoodBufferResponse>() {
-                        @Override
-                        public void onComplete(@NonNull Task<PlaceLikelihoodBufferResponse> task) {
-                            if (task.isSuccessful() && task.getResult() != null) {
-                                PlaceLikelihoodBufferResponse likelyPlaces = task.getResult();
-
-                                // Set the count, handling cases where less than 5 entries are returned.
-//                                int count;
-//                                if (likelyPlaces.getCount() < M_MAX_ENTRIES) {
-//                                    count = likelyPlaces.getCount();
-//                                } else {
-//                                    count = M_MAX_ENTRIES;
-//                                }
-//
-//                                int i = 0;
-//                                mLikelyPlaceNames = new String[count];
-//                                mLikelyPlaceAddresses = new String[count];
-//                                mLikelyPlaceAttributions = new String[count];
-//                                mLikelyPlaceLatLngs = new LatLng[count];
-//
-//                                for (PlaceLikelihood placeLikelihood : likelyPlaces) {
-//                                    // Build a list of likely places to show the user.
-//                                    mLikelyPlaceNames[i] = (String) placeLikelihood.getPlace().getName();
-//                                    mLikelyPlaceAddresses[i] = (String) placeLikelihood.getPlace()
-//                                            .getAddress();
-//                                    mLikelyPlaceAttributions[i] = (String) placeLikelihood.getPlace()
-//                                            .getAttributions();
-//                                    mLikelyPlaceLatLngs[i] = placeLikelihood.getPlace().getLatLng();
-//
-//                                    i++;
-//                                    if (i > (count - 1)) {
-//                                        break;
-//                                    }
-//                                }
-//
-//                                // Release the place likelihood buffer, to avoid memory leaks.
-//                                likelyPlaces.release();
-
-                                // Show a dialog offering the user the list of likely places, and add a
-                                // marker at the selected place.
-                                openPlacesDialog();
-
-                            } else {
-                                Log.e(TAG, "Exception: %s", task.getException());
-                            }
-                        }
-                    });
-        } else {
-            // The user has not granted permission.
-            Log.i(TAG, "The user did not grant location permission.");
-
-            // Add a default marker, because the user hasn't selected a place.
-            mMap.addMarker(new MarkerOptions()
-                    .title(getString(R.string.default_info_title))
-                    .position(mDefaultLocation)
-                    .snippet(getString(R.string.default_info_snippet)));
-
-            // Prompt the user for permission.
-            getLocationPermission();
-        }
-    }
-
-    /**
-     * Displays a form allowing the user to select a place from a list of likely places.
-     */
-    private void openPlacesDialog() {
-        // Ask the user to choose the place where they are now.
-        DialogInterface.OnClickListener listener = new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                // The "which" argument contains the position of the selected item.
-                LatLng markerLatLng = mLikelyPlaceLatLngs[which];
-                String markerSnippet = mLikelyPlaceAddresses[which];
-                if (mLikelyPlaceAttributions[which] != null) {
-                    markerSnippet = markerSnippet + "\n" + mLikelyPlaceAttributions[which];
-                }
-
-                // Add a marker for the selected place, with an info window
-                // showing information about that place.
-                mMap.addMarker(new MarkerOptions()
-                        .title(mLikelyPlaceNames[which])
-                        .position(markerLatLng)
-                        .snippet(markerSnippet));
-
-                // Position the map's camera at the location of the marker.
-                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(markerLatLng,
-                        DEFAULT_ZOOM));
-            }
-        };
-
-        // Display the dialog.
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(R.string.pick_place)
-                .setItems(mLikelyPlaceNames, listener)
-                .show();
     }
 
     /**
@@ -513,113 +586,136 @@ public class ActivityPlayerHome extends AppCompatActivity
         if (mMap == null) {
             return;
         }
-        try {
-            if (mLocationPermissionGranted) {
-                mMap.setMyLocationEnabled(true);
-                mMap.getUiSettings().setMyLocationButtonEnabled(true);
-            } else {
-                mMap.setMyLocationEnabled(false);
-                mMap.getUiSettings().setMyLocationButtonEnabled(false);
-                mLastKnownLocation = null;
-                getLocationPermission();
-            }
-        } catch (SecurityException e) {
-            Log.e("Exception: %s", e.getMessage());
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {
+    }
+
+    @Override
+    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
+    }
+
+    public void onStatusChanged(String s, int i, Bundle bundle) {
+        Log.v(TAG, "Status changed: " + s);
+    }
+
+    public void onProviderEnabled(String s) {
+        Log.e(TAG, "PROVIDER DISABLED: " + s);
+    }
+
+    public void onProviderDisabled(String s) {
+        Log.e(TAG, "PROVIDER DISABLED: " + s);
+    }
+
+    @Override
+    public void onStart(){
+        super.onStart();
+        if(mGoogleApiClient != null){
+            mGoogleApiClient.connect();
         }
     }
 
     @Override
     public void onConnected(@Nullable Bundle bundle) {
-
+        Log.d(TAG, "Connection established. Fetching location ..");
+        mLocationRequest = LocationRequest.create();
+        mLocationRequest.setInterval(INTERVAL);
+        mLocationRequest.setFastestInterval(FASTEST_INTERVAL);
+        mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+        startLocationUpdates();
+        //LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, (com.google.android.gms.location.LocationListener) this);
     }
 
-    @Override
-    public void onConnectionSuspended(int i) {
 
-    }
-
-    @Override
-    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
-
-    }
 
     @Override
     public void onLocationChanged(Location location) {
+        Toast.makeText(getApplicationContext(),"on location change called",Toast.LENGTH_SHORT).show();
         lat = location.getLatitude();
         lon = location.getLongitude();
-        updateMap();
+
+        playerLatLng = new LatLng(lat,lon);
+
+        ComplexPreferences complexPreferences = ComplexPreferences.getComplexPreferences(getApplicationContext(), "object_prefs", 0);
+        player = complexPreferences.getObject("currentplayer", Player.class);
+
+        Toast.makeText(getApplicationContext(),player.getPlayerId()+"",Toast.LENGTH_SHORT).show();
+
+        root.child("Player").child(player.getPlayerId()).child("latitude").setValue(lat + "");
+        root.child("Player").child(player.getPlayerId()).child("longitude").setValue(lon + "");
+
         Toast.makeText(getApplicationContext(),"location changed call",Toast.LENGTH_SHORT).show();
+
+        //prision
+        // one player catch other player
+        // player is outside the yard
+
+        //get the flag
+        //check if player is in his yard
+        //hide flag
+        //if player with flag in his yard so GAME IS OVER
+
+//        if (isYardDraw == 1) {
+//            checkIfPlayerHasFlag();
+//        }
+    }
+
+    void checkIfPlayerHasFlag() {
+        LatLng currentFlagMarker = null;
+
+        if (player.getTeam().equals("A")) {
+            currentFlagMarker = new LatLng(flagALatLng.latitude,flagALatLng.longitude);
+        }
+        else {
+            currentFlagMarker = new LatLng(flagBLatLng.latitude,flagBLatLng.longitude);
+        }
+
+        Location flagLoc = new Location("");
+        flagLoc.setLatitude(currentFlagMarker.latitude);
+        flagLoc.setLongitude(currentFlagMarker.longitude);
+
+
+        Location playerLoc = new Location("");
+        flagLoc.setLatitude(playerLatLng.latitude);
+        flagLoc.setLongitude(playerLatLng.longitude);
+
+        if(flagLoc.distanceTo(playerLoc) <= 3) {
+
+            Toast.makeText(getApplicationContext(), "Yeeeh.......you got the flag!!!",Toast.LENGTH_SHORT).show();
+
+            root.child("Player").child(player.getPlayerId()).child("haveflag").setValue("true");
+
+            //hide flag;
+            if (player.getTeam().equals("A")) {
+                flagBMarker.remove();
+            }
+            else {
+                flagAMarker.remove();
+            }
+        }
     }
 
     private void updateMap() {
-        mMap.clear();
-        LatLng mylocation = new LatLng(lat, lon);
-        //mMap.setMyLocationEnabled(true);
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(mylocation));
-        mMap.setMaxZoomPreference(18);
-        mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
-        CameraPosition cameraPosition = new CameraPosition.Builder().target(
-                new LatLng(lat, lon)).zoom(18).tilt(67.5f).bearing(314).build();
-        mMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
-        mMap.addMarker(new MarkerOptions().position(mylocation).title("Team A").icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_audiotrack_dark)));
-        //mMap.addMarker(new MarkerOptions().position(mDefaultLocation).title("Team B").icon(BitmapDescriptorFactory.fromResource(R.drawable.boy)));
-        mMap.addMarker(new MarkerOptions().position(boundry1).title("Flag").icon(BitmapDescriptorFactory.fromResource(R.drawable.flag)));
-        addFencing();
-        mMap.addCircle(circleOptions);
-        updatePlayer();
-        mMap.addPolyline(polylineOptions);
-        getKey();
-        showplayerGuide();
-        //Toast.makeText(getApplicationContext(), "L:" + lat + ",L:" + lon, Toast.LENGTH_LONG).show();
-    }
-
-    private void showplayerGuide() {
-        getDirection();
+//        Double latitude = lat;
+//        Double longitude = lon;
+//        LatLng mylocation = new LatLng(latitude, longitude);
+//        //mMap.setMyLocationEnabled(true);
+//        mMap.moveCamera(CameraUpdateFactory.newLatLng(mylocation));
+//        mMap.setMaxZoomPreference(18);
+//        mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+//        CameraPosition cameraPosition = new CameraPosition.Builder().target(
+//                new LatLng(this.lat, this.lon)).zoom(18).tilt(67.5f).bearing(314).build();
+//        mMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
+//        mMap.addMarker(new MarkerOptions().position(mylocation).title("Team A").icon(BitmapDescriptorFactory.fromResource(R.drawable.girl)));
+//        mMap.addMarker(new MarkerOptions().position(boundry1).title("Flag").icon(BitmapDescriptorFactory.fromResource(R.drawable.flag1)));
+//        addFencing();
+//        mMap.addCircle(circleOptions);
+//        updatePlayer(latitude,longitude);
+//        mMap.addPolyline(polylineOptions);
     }
 
     private void addFencing() {
-        String key = "" + "12.978888" + "-" + "77.5996888";
-        Geofence geofence = getGeofence(boundry1.latitude, boundry1.longitude, key);
-        if (mLocationPermissionGranted) {
-            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                // TODO: Consider calling
-                //    ActivityCompat#requestPermissions
-                // here to request the missing permissions, and then overriding
-                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                //                                          int[] grantResults)
-                // to handle the case where the user grants the permission. See the documentation
-                // for ActivityCompat#requestPermissions for more details.
-                return;
-            }
-            geofencingClient.addGeofences(getGeofencingRequest(geofence),
-                    getGeofencePendingIntent())
-                    .addOnSuccessListener(this, new OnSuccessListener<Void>() {
-                        @Override
-                        public void onSuccess(Void aVoid) {
-                            Toast.makeText(com.kirtiparghi.capturetheflag.ActivityPlayerHome.this,
-                                    "Location alter has been added",
-                                    Toast.LENGTH_SHORT).show();
-                        }
-                    })
-                    .addOnFailureListener(this, new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-                            Toast.makeText(com.kirtiparghi.capturetheflag.ActivityPlayerHome.this,
-                                    "Location alter could not be added",
-                                    Toast.LENGTH_SHORT).show();
-                        }
-                    });
-
-            circleOptions
-                    .strokeColor(Color.BLACK) //Outer black border
-                    .fillColor(Color.TRANSPARENT) //inside of the geofence will be transparent, change to whatever color you prefer like 0x88ff0000 for mid-transparent red
-                    .center(boundry1) // the LatLng Object of your geofence location
-                    .radius(GEOFENCE_RADIUS); // The radius (in meters) of your geofence
-        } else {
-            getLocationPermission();
-
-        }
-
     }
 
     private PendingIntent getGeofencePendingIntent() {
@@ -635,57 +731,15 @@ public class ActivityPlayerHome extends AppCompatActivity
         return builder.build();
     }
 
-    private Geofence getGeofence(double lat, double lang, String key) {
-
-        return new Geofence.Builder()
-                .setRequestId(key)
-                .setCircularRegion(lat, lang, GEOFENCE_RADIUS)
-                .setExpirationDuration(Geofence.NEVER_EXPIRE)
-                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER |
-                        Geofence.GEOFENCE_TRANSITION_EXIT)
-                .setLoiteringDelay(10000)
-                .build();
-    }
-
-    @Override
-    public void onStart() {
-        super.onStart();
-        mGoogleApiClient.connect();
-//        Action viewAction = Action.newAction(
-//                Action.TYPE_VIEW, // TODO: choose an action type.
-//                "Maps Page", // TODO: Define a title for the content shown.
-//                // TODO: If you have web page content that matches this app activity's content,
-//                // make sure this auto-generated web page URL is correct.
-//                // Otherwise, set the URL to null.
-//                Uri.parse("http://host/path"),
-//                // TODO: Make sure this auto-generated app deep link URI is correct.
-//                Uri.parse("android-app://net.simplifiedcoding.googlemapsdistancecalc/http/host/path")
-//        );
-//        AppIndex.AppIndexApi.start(mGoogleApiClient, viewAction);
-    }
-
     @Override
     public void onStop() {
         super.onStop();
         mGoogleApiClient.disconnect();
-        Log.d(TAG, "isConnected ...............: " + mGoogleApiClient.isConnected());
-//        Action viewAction = Action.newAction(
-//                Action.TYPE_VIEW, // TODO: choose an action type.
-//                "Maps Page", // TODO: Define a title for the content shown.
-//                // TODO: If you have web page content that matches this app activity's content,
-//                // make sure this auto-generated web page URL is correct.
-//                // Otherwise, set the URL to null.
-//                Uri.parse("http://host/path"),
-//                // TODO: Make sure this auto-generated app deep link URI is correct.
-//                Uri.parse("android-app://net.simplifiedcoding.googlemapsdistancecalc/http/host/path")
-//        );
-//        AppIndex.AppIndexApi.end(mGoogleApiClient, viewAction);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        //stopLocationUpdates();
     }
 
     @Override
@@ -694,19 +748,17 @@ public class ActivityPlayerHome extends AppCompatActivity
         if (mGoogleApiClient.isConnected()) {
             startLocationUpdates();
             Log.d(TAG, "Location update resumed .....................");
-            //Toast.makeText(getApplicationContext(), "I AM TRIGGERERED", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getApplicationContext(), "I AM TRIGGERERED", Toast.LENGTH_SHORT).show();
         }
-    }
-
-    protected void stopLocationUpdates() {
-        LocationServices.FusedLocationApi.removeLocationUpdates(
-                mGoogleApiClient, this);
-        Log.d(TAG, "Location update stopped .......................");
+        else {
+            Toast.makeText(getApplicationContext(), "I AM TRIGGERERED not", Toast.LENGTH_SHORT).show();
+        }
     }
 
     protected void startLocationUpdates() {
         if (!mLocationPermissionGranted) {
             if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                //
                 // TODO: Consider calling
                 //    ActivityCompat#requestPermissions
                 // here to request the missing permissions, and then overriding
@@ -714,46 +766,19 @@ public class ActivityPlayerHome extends AppCompatActivity
                 //                                          int[] grantResults)
                 // to handle the case where the user grants the permission. See the documentation
                 // for ActivityCompat#requestPermissions for more details.
+
+                Toast.makeText(getApplicationContext(),"start locaiton updates in if...",Toast.LENGTH_SHORT).show();
                 return;
             }
 
         } else {
+//            LocationServices.FusedLocationApi.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, com.kirtiparghi.capturetheflag.ActivityPlayerHome.this);
+//            LocationServices.FusedLocationApi.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 0, com.kirtiparghi.capturetheflag.ActivityPlayerHome.this);
             PendingResult<Status> pendingResult = LocationServices.FusedLocationApi.requestLocationUpdates(
-                    mGoogleApiClient, mLocationRequest, com.kirtiparghi.capturetheflag.ActivityPlayerHome.this);
+                    mGoogleApiClient, mLocationRequest, ActivityPlayerHome.this);
+            Toast.makeText(getApplicationContext(),"start locaiton updates in else...",Toast.LENGTH_SHORT).show();
         }
         Log.d(TAG, "Location update started ..............: ");
-    }
-
-    private void updatePlayer() {
-        if (!TextUtils.isEmpty(userId)) {
-            mFirebaseDatabase.child(userId).child("latitude").setValue(lat + "");
-            mFirebaseDatabase.child(userId).child("longitude").setValue(lon + "");
-            mFirebaseDatabase.child(userId).child("player").setValue("KKK@GMAIL.COM");
-        }
-    }
-
-    private void getKey() {
-        mFirebaseDatabase.addValueEventListener(new ValueEventListener() {
-            @Override
-            public void onDataChange(DataSnapshot dataSnapshot) {
-
-                for (DataSnapshot a : dataSnapshot.getChildren()) {
-                    //User user = dataSnapshot.getValue(User.class);
-                    Player user = a.getValue(Player.class);
-                    if (playerEmail.equals(user.player)) {
-                        userId = a.getKey();
-                    }
-                    Log.d(TAG, "User name: " + user.team + ", email " + user.player + ", latitude " + user.latitude + ", longitude " + user.longitude);
-                }
-
-            }
-
-            @Override
-            public void onCancelled(DatabaseError error) {
-                // Failed to read value
-                Log.w(TAG, "Failed to read value.", error.toException());
-            }
-        });
     }
 
     public String makeURL (double sourcelat, double sourcelog, double destlat, double destlog ){
@@ -772,34 +797,5 @@ public class ActivityPlayerHome extends AppCompatActivity
         urlString.append("&sensor=false&mode=walking&alternatives=true");
         urlString.append("&key=AIzaSyCNeHVJ89PyygTFC4vQ-xIKgLIP4ZzTFRk");
         return urlString.toString();
-    }
-
-    private void getDirection(){
-        //Getting the URL
-        String url = makeURL(lat, lon, boundry1.latitude, boundry1.longitude);
-        //Showing a dialog till we get the route
-        final ProgressDialog loading = ProgressDialog.show(this, "Getting Route", "Please wait...", false, false);
-
-        //Creating a string request
-        StringRequest stringRequest = new StringRequest(url,
-                new Response.Listener<String>() {
-                    @Override
-                    public void onResponse(String response) {
-                        loading.dismiss();
-                        txt_status.setText(response);
-                        //Calling the method drawPath to draw the path
-                        //drawPath(response);
-                    }
-                },
-                new Response.ErrorListener() {
-                    @Override
-                    public void onErrorResponse(VolleyError error) {
-                        loading.dismiss();
-                    }
-                });
-
-        //Adding the request to request queue
-        RequestQueue requestQueue = Volley.newRequestQueue(this);
-        requestQueue.add(stringRequest);
     }
 }
